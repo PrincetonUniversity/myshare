@@ -243,6 +243,16 @@ def test_format_levelfs():
     assert t.format_levelfs(0.0) == "0"
 
 
+def test_format_levelfs_list():
+    t = ShareTree()
+    lfs = [float("inf"), 6.1, 6.2, 0.0077, 1.245e+12, 0]
+    expected = ["infinity", "6", "6", "0.008", "1.24e+12", "0"]
+    assert t.format_levelfs_list(lfs, padding=False) == expected
+    lfs = [float("inf"), 6.1, 0.0077, 1.245e+12, 0]
+    expected = ["infinity    ", "6    ", "0.008", "1.24e+12    ", "0    "]
+    assert t.format_levelfs_list(lfs, padding=True) == expected
+
+
 @pytest.mark.parametrize("pct, expected", [
     (100, "100th"),
     (78, "78th"),
@@ -373,13 +383,41 @@ def test_invalid_account_message(small_tree):
 
 
 def test_get_descendants_table(account_tree):
+    """Series of test when -A option is used."""
     t = account_tree
     expected = 'No table since "cft" has no descendants.'
     assert t.get_descendants_table(node_id="cft (--)") == expected
-    # users within a specific account
-    expected = ("    User   Account     Usage        LevelFS     Fairshare\n"
-                "    ─────────────────────────────────────────────────────\n"
-                "1     u1       tom   333 (90%)   infinity          0.5550\n"
-                "2     u1       pli    33  (9%)          6          0.5000\n"
-                "3     u2       pli     3  (1%)          6          0.5500\n")
+    # users at all levels under a specific account
+    expected = ("    User   Account     Usage      LevelFS   Fairshare\n"
+                "    ─────────────────────────────────────────────────\n"
+                "1     u1       tom   333 (90%)   infinity      0.5550\n"
+                "2     u1       pli    33  (9%)          6      0.5000\n"
+                "3     u2       pli     3  (1%)          6      0.5500\n")
     assert t.get_descendants_table(node_id="pli (--)", args_account="pli") == expected
+
+
+@pytest.mark.parametrize("path_list, skip_root_accounts, expected", [
+    (["root (--)", "total (--)", "cbe (--)", "cbe (aturing)"],
+     ("total",),
+     "total (--)"),
+    (["cbe (aturing)", "cbe (--)", "total (--)", "root (--)"],
+     ("total",),
+     "total (--)"),
+    (["root (--)", "total (--)", "cbe (--)", "cbe (aturing)"],
+     ("bigfoot", "total"),
+     "total (--)"),
+    (["root (--)", "total (--)", "cbe (--)", "cbe (aturing)"],
+     ("bigfoot",),
+     "root (--)"),
+    (["root (--)", "total (--)", "cft (--)"],
+     ("cft",),
+     "cft (--)"),
+    (["root (--)", "cbe (--)", "cbe (aturing)"],
+     (),
+     "root (--)"),
+    ([],
+     ("total (--)",),
+     "root (--)")])
+def test_get_top_level_node_id(small_tree, path_list, skip_root_accounts, expected):
+    t = small_tree
+    assert t.get_top_level_node_id(path_list, skip_root_accounts) == expected

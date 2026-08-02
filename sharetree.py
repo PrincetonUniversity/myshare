@@ -1,5 +1,12 @@
 """Assume 'sponsor (user)' is unique over the tree. Will get conflicts otherwise.
-   Same is true with 'association (--)'. Could use uid to resolve the first issue."""
+   Same is true with 'association (--)'. Could use uid to resolve the first issue.
+
+   mypy is used for static type checking. This explains the appearance of
+   comments such as:
+
+       # type: ignore[return-value]
+
+"""
 
 
 import subprocess
@@ -76,6 +83,7 @@ class ShareTree:
            number of accounts for the user."""
         self.lines: List[str] = []
         self.tree = Tree()
+        self.root_to_user_paths: List[List[str]] = []
         self.num_accounts = 0
         self.rawshares_parent = 0
 
@@ -137,6 +145,9 @@ class ShareTree:
                                       parent=current_parent,
                                       data=TreeNode(*items))
                 if netid == user:
+                    path = list(self.tree.rsearch(identifier))
+                    path.reverse()
+                    self.root_to_user_paths.append(path)
                     self.num_accounts += 1
             elif len(items) == 5 and "parent" in line:
                 # non-user association with RawShares equals "parent"
@@ -184,7 +195,8 @@ class ShareTree:
         s += f"Leaves count: {len(self.tree.leaves())}\n"
         s += f"Tree depth: {self.tree.depth()}\n"
         s += f"Is total (--) in tree? {'total (--)' in self.tree}\n"
-        s += f'Number of accounts with RawShares equals "parent": {self.rawshares_parent}\n\n'
+        s += f'Number of accounts with RawShares equals "parent": {self.rawshares_parent}\n'
+        s += f'Root to user paths: {self.root_to_user_paths}\n\n'
         return s
 
 
@@ -379,7 +391,7 @@ class ShareTree:
             shares.append(str(sh))
             usage.append(str(us))
             fair.append(self.format_fairshare(fr))
-            lfs.append(self.format_levelfs(lf, padding=True))
+            lfs.append(lf)
             users.append(ct)
             minmax.append(mnmx)
 
@@ -395,13 +407,10 @@ class ShareTree:
             mixed = True
 
         tb = " " * 5 * tabbing
-        if fields == ("Account", "Shares", "Usage", "LevelFS", "ActiveUsers") and sort_by == "RawShares":
+        if fields == ("Account", "Shares", "ActiveUsers") and sort_by == "RawShares":
             #account = ["--" if usr != "--" else acc for acc, usr in zip(account, user)]
-            # show accounts sorted by shares
             columns = {"Account": account,
                        "Shares": shares,
-                       "Usage": usage_props,
-                       "LevelFS": lfs,
                        "ActiveUsers": users}
             table = self.create_table(columns,
                                       show_zero_usage=True,
@@ -409,17 +418,19 @@ class ShareTree:
             return table
         elif args_account is not None and not group_by_account:
             # myshare -A <account>
+            lfs_fmt = self.format_levelfs_list(lfs)
             columns = {"User": user,
                        "Account": account,
                        "Usage": usage_props,
-                       "LevelFS": lfs,
+                       "LevelFS": lfs_fmt,
                        "Fairshare": fair}
             table = self.create_table(columns, user_to_color=user_to_color)
             return table
         elif all_users:
+            lfs_fmt = self.format_levelfs_list(lfs, padding=True)
             columns = {"User": user,
                        "Usage": usage_props,
-                       "LevelFS": lfs,
+                       "LevelFS": lfs_fmt,
                        "Fairshare": fair}
             caption_raw = ("Users in the same low-level account have "
                            "essentially the same Fairshare value.")
@@ -433,10 +444,11 @@ class ShareTree:
             return table
         elif mixed:
             account = ["--" if usr != "--" else acc for acc, usr in zip(account, user)]
+            lfs_fmt = self.format_levelfs_list(lfs, padding=True)
             columns = {"Account": account,
                        "User": user,
                        "Usage": usage_props,
-                       "LevelFS": lfs,
+                       "LevelFS": lfs_fmt,
                        "Fairshare": fair}
             caption_raw = ("This level of the sshare tree contains accounts and users.")
             caption = textwrap.TextWrapper(width=output_width).fill(caption_raw)
@@ -449,10 +461,12 @@ class ShareTree:
                                       caption=caption)
             return table
         else:
+            padding = False if args_account is not None and group_by_account else True
+            lfs_fmt = self.format_levelfs_list(lfs, padding=padding)
             columns = {"Account": account,
                        "Shares": shares,
                        "Usage": usage_props,
-                       "LevelFS": lfs,
+                       "LevelFS": lfs_fmt,
                        "Fairshare": minmax,
                        "ActiveUsers": users}
             caption_raw = ("In the table above, the minimum and maximum Fairshare "
@@ -507,19 +521,27 @@ class ShareTree:
         return (f"{rank} of {total_users}", pct_fmt, direction)
 
 
-    def is_pli(self, node_id: str) -> bool:
-        """Return True if the node is under PLI else False."""
-        return self.tree.is_ancestor("pli (--)", node_id)
-
-
     @staticmethod
-    def dept_share_as_percentage(shares: int, total: int) -> Union[int, float]:
+    def share_as_percentage(shares: int, total: int) -> Union[int, float]:
         """Return a formatted version of the percentage of raw shares of the
            department."""
         pct = 100 * shares / total
         if pct < 0.5:
             return round(pct, 5)
         return round(pct)
+
+
+    def get_top_level_node_id(self,
+                              path: List[str],
+                              sr_accounts: Tuple[str, ...]) -> str:
+        """Given a path and a list of accounts that should skip root, return
+           the node_id of the appropriate top-level account."""
+        if sr_accounts:
+            for sr_account in sr_accounts:
+               for nid in path:
+                  if f"{sr_account} (--)" == nid:
+                      return nid
+        return self.tree.root  # type: ignore[return-value]
 
 
     def get_total_shares(self, node_id: str) -> int:
@@ -532,15 +554,23 @@ class ShareTree:
         return total
 
 
-    # TODO hard-coded level
-    def get_dept(self, node_id: str) -> str:
-        """Return information about the department of the user."""
-        if not self.is_pli(node_id):
-            total = self.get_total_shares(node_id)
-            dept = self.tree.ancestor(node_id, level=2)
-            pct = self.dept_share_as_percentage(int(dept.data.raw_shares), total)
-            return f"{dept.data.account}: {dept.data.raw_shares}/{total} or {pct}%"
-        return "PLI: 300"
+    def get_top_level_shares(self,
+                             node_id: str,
+                             path: List[str],
+                             sr_accounts: Tuple[str, ...]) -> str:
+        """Return information about the shares of the top-level account."""
+        if sr_accounts:
+            for sr_account in sr_accounts:
+                for i, account in enumerate(path):
+                    if f"{sr_account} (--)" == account:
+                        total = self.get_total_shares(account)
+                        one_level_down_nid = path[i + 1]
+                        pct = self.share_as_percentage(int(self.tree[one_level_down_nid].data.raw_shares), total)
+                        return f"{one_level_down_nid}: {self.tree[one_level_down_nid].data.raw_shares}/{total} or {pct}%"
+        total = self.get_total_shares(self.tree.root)  # type: ignore[arg-type]
+        one_level_down_nid = path[1]
+        pct = self.share_as_percentage(int(self.tree[one_level_down_nid].data.raw_shares), total)
+        return f"{one_level_down_nid}: {self.tree[one_level_down_nid].data.raw_shares}/{total} or {pct}%"
 
 
     def get_levelfs_rank(self, node_id: str) -> str:
@@ -583,6 +613,13 @@ class ShareTree:
         else:
             val, pad = "0", "    "
         return f"{val}{pad}" if padding else val
+
+
+    @staticmethod
+    def format_levelfs_list(lfs_list: List[float],
+                            padding: bool = False) -> List[str]:
+        """Return a list of formatted LevelFS values."""
+        return [ShareTree.format_levelfs(x, padding) for x in lfs_list]
 
 
     def draw_subtree(self, node_id: str, netid: str) -> None:
@@ -709,7 +746,7 @@ class ShareTree:
                                     for child in self.tree.children(node_id)
                                     if not self.tree[child.identifier].is_leaf())
         else:
-            node_id = self.tree.root
+            node_id = self.tree.root  # type: ignore[assignment]
             accounts.extend(child.data.account
                             for child in self.tree.children(node_id))
         return accounts

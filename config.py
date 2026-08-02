@@ -27,10 +27,14 @@ REPEAT_ALL_TABLES = False
 SHOW_ZERO_USAGE = False
 
 # show or ignore the weights paragraph
-INCLUDE_JOB_PRIORITY_POST_AMBLE = True
+JOB_PRIORITY_POST_AMBLE = True
 
 # instead of bold for Shares column could also only show account and shares
 # how to tell about CS, LSI, PNI, MATH, cloud computing?
 # how to specify the priority needed for a job to run per cluster?
 # CLI option to show users with zero usage
 # how can a user only see the data for one account of their many (lowercase a)?
+# -z option to show zero usage users
+# -s option to show table sorted by shares
+# could store a list of paths to the user when building the tree then loop over these instead of all nodes
+# get_descendants fails when c.FAIRSHARE_DIGITS is varied
