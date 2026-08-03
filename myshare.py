@@ -68,7 +68,7 @@ if __name__ == "__main__":
             print("INFO: The -v flag has no effect on -A <account>.")
         node_id = f"{args.account} (--)"
         if node_id in mytree.tree:
-            mytree.draw_subtree(node_id, args.account)
+            #mytree.draw_subtree(node_id, ["root (--)"], args.account)
             table = mytree.get_descendants_table(node_id=node_id,
                                                  decimals=1,
                                                  sort_by="Usage",
@@ -92,18 +92,21 @@ if __name__ == "__main__":
     ## S H A R E S ##
     #################
     if args.shares:
-        # TODO need to loop over all accounts of user since could have total and pli
-        if args.verbose:
-            print("INFO: The -v flag has no effect on -s or --shares.")
-        down = "\u2193"
-        print(f"\nThe table below ({down}) shows the accounts sorted by Shares:\n")
-        fields_shares = ("Account", "Shares", "ActiveUsers")
-        print(mytree.get_descendants_table(node_id="total (--)",
-                                           decimals=1,
-                                           sort_by="RawShares",
-                                           accounts_to_color=("cses",),
-                                           output_width=c.WIDTH,
-                                           fields=fields_shares))
+        for path in mytree.root_to_user_paths:
+            if args.verbose:
+                print("INFO: The -v flag has no effect on -s or --shares.")
+            down = "\u2193"
+            print(f"\nThe table below ({down}) shows the accounts sorted by Shares:\n")
+            node_id_top_level = mytree.get_top_level_node_id(path, c.SKIP_ROOT_ACCOUNTS)
+            accounts_to_color = tuple([p.split()[0] for p in path[:-1]])
+            fields_shares = ("Account", "Shares", "ActiveUsers")
+            # TODO does not work for PLI since mix of accounts and users
+            print(mytree.get_descendants_table(node_id=node_id_top_level,
+                                               decimals=1,
+                                               sort_by="RawShares",
+                                               accounts_to_color=accounts_to_color,
+                                               output_width=c.WIDTH,
+                                               fields=fields_shares))
         sys.exit(0)
 
 
@@ -113,13 +116,14 @@ if __name__ == "__main__":
     num_accounts_shown = 0
     for path in mytree.root_to_user_paths:
         node_id = path[-1]
-        mytree.draw_subtree(node_id, args.user)
+        node_id_top_level = mytree.get_top_level_node_id(path, c.SKIP_ROOT_ACCOUNTS)
+        mytree.draw_subtree(node_id_top_level, path, args.user)
         fs = mytree.tree[node_id].data.fair_share
         print(mytree.format_fairshare_line(fs))
         print("")
         print(mytree.explain(fs))
-        node_id_top_level = mytree.get_top_level_node_id(path, c.SKIP_ROOT_ACCOUNTS)
-        print(f"Top-level shares: {mytree.get_top_level_shares(node_id, path, c.SKIP_ROOT_ACCOUNTS)}\n")
+        top_level_shares = mytree.get_top_level_shares(node_id_top_level, path)
+        print(f"Top-level shares: {top_level_shares}")
         print("")
 
         if not args.verbose:
@@ -186,9 +190,9 @@ if __name__ == "__main__":
             print("─" * c.WIDTH)
 
     if not args.verbose:
-        print("\n")
         print("─" * c.WIDTH)
         print("For more details about your cluster share, run the following command:")
+        print()
         print("    $ myshare -v | less")
     if args.verbose:
         print("\nFor more information about job priority, making a financial contribution\nto the cluster, additional GPUs at Princeton:")

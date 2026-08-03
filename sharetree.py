@@ -546,7 +546,8 @@ class ShareTree:
 
     def get_total_shares(self, node_id: str) -> int:
         """Return the total shares of the children of the specified parent node.
-           Shares that are non-integers are skipped."""
+           Shares that are non-integers are skipped. The children may be either
+           accounts or users."""
         total = 0
         for child in self.tree.children(node_id):
             if child.data.raw_shares.isdigit():
@@ -555,22 +556,17 @@ class ShareTree:
 
 
     def get_top_level_shares(self,
-                             node_id: str,
-                             path: List[str],
-                             sr_accounts: Tuple[str, ...]) -> str:
-        """Return information about the shares of the top-level account."""
-        if sr_accounts:
-            for sr_account in sr_accounts:
-                for i, account in enumerate(path):
-                    if f"{sr_account} (--)" == account:
-                        total = self.get_total_shares(account)
-                        one_level_down_nid = path[i + 1]
-                        pct = self.share_as_percentage(int(self.tree[one_level_down_nid].data.raw_shares), total)
-                        return f"{one_level_down_nid}: {self.tree[one_level_down_nid].data.raw_shares}/{total} or {pct}%"
-        total = self.get_total_shares(self.tree.root)  # type: ignore[arg-type]
-        one_level_down_nid = path[1]
-        pct = self.share_as_percentage(int(self.tree[one_level_down_nid].data.raw_shares), total)
-        return f"{one_level_down_nid}: {self.tree[one_level_down_nid].data.raw_shares}/{total} or {pct}%"
+                             node_id_top_level: str,
+                             path: List[str]) -> str:
+        """Return information about the shares of the top-level account. The
+           node_id_top_level is guaranteed to be in path."""
+        total = self.get_total_shares(node_id_top_level)
+        one_level_down_idx = path.index(node_id_top_level) + 1
+        one_level_down_nid = path[one_level_down_idx]
+        one_level_down_shares = self.tree[one_level_down_nid].data.raw_shares
+        one_level_down_account = one_level_down_nid.split()[0]
+        pct = self.share_as_percentage(int(one_level_down_shares), total)
+        return f"{one_level_down_account}: {one_level_down_shares}/{total} or {pct}%"
 
 
     def get_levelfs_rank(self, node_id: str) -> str:
@@ -622,32 +618,29 @@ class ShareTree:
         return [ShareTree.format_levelfs(x, padding) for x in lfs_list]
 
 
-    def draw_subtree(self, node_id: str, netid: str) -> None:
-        """Draw the subtree from root to the specified node."""
-        path = list(self.tree.rsearch(node_id))
-        path.reverse()
+    def draw_subtree(self,
+                     node_id_top_level: str,
+                     path: List[str],
+                     netid: str) -> None:
+        """Draw the subtree from root to the last node_id in path."""
         tree = Tree()
         tree.create_node(tag=path[0].split()[0], identifier=path[0])
         parent = path[0]
         term = Terminal()
-        user = f"{term.bold}{netid}{term.normal}"
-        # TODO how to get right node for next line
-        #total_shares = self.get_total_shares(node_id)
+        user_bold = f"{term.bold}{netid}{term.normal}"
+        tls = self.get_top_level_shares(node_id_top_level, path)
+        one_level_down_idx = path.index(node_id_top_level) + 1
+        one_level_down_nid = path[one_level_down_idx]
         for i, p in enumerate(path[1:]):
-            rank = self.get_levelfs_rank(p)
-            # TODO added strip
-            level = self.format_levelfs(float(self.tree[p].data.level_fs)).strip()
-            #shares = self.tree[p].data.raw_shares
-            if i == 0:
-                tree.create_node(tag=f"{p.split()[0]}", identifier=p, parent=parent)
-            elif i + 1 == len(path[1:]):
-                tree.create_node(tag=f"{user} (LevelFS: {level}, LevelFS Rank: {rank})", identifier=p, parent=parent)
-            elif i == 1:
-                # TODO
-                #tree.create_node(tag=f"{p.split()[0]} (LevelFS: {level}, LevelFS Rank: {rank}, Shares: {shares}/{total_shares})", identifier=p, parent=parent)
-                tree.create_node(tag=f"{p.split()[0]} (LevelFS: {level}, LevelFS Rank: {rank})", identifier=p, parent=parent)
+            if p == one_level_down_nid:
+                rank = self.get_levelfs_rank(p)
+                lfs = self.format_levelfs(float(self.tree[p].data.level_fs), padding=False)
+                tag = f"{p.split()[0]} (LevelFS: {lfs}, LevelFS Rank: {rank}, Shares: {tls.split()[1]})"
+                tree.create_node(tag=tag, identifier=p, parent=parent)
+            elif p.endswith(f" ({netid})"):
+                tree.create_node(tag=user_bold, identifier=p, parent=parent)
             else:
-                tree.create_node(tag=f"{p.split()[0]} (LevelFS: {level}, LevelFS Rank: {rank})", identifier=p, parent=parent)
+                tree.create_node(tag=f"{p.split()[0]}", identifier=p, parent=parent)
             parent = p
         tree.show()
 

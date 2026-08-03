@@ -278,6 +278,24 @@ def test_get_total_shares_med(medium_tree):
     assert t.get_total_shares("kent (--)") == 4
 
 
+@pytest.mark.parametrize("nid_top, path_list, expected", [
+    ("total (--)",
+     ["root (--)", "total (--)", "chem (--)", "rcar (--)", "rcar (u1)"],
+     "chem: 1/2 or 50%"),
+    ("root (--)",
+     ["root (--)", "total (--)", "orfe (--)", "kent (--)", "kent (u1)"],
+     "total: 1/3 or 33%"),
+    ("chem (--)",
+     ["root (--)", "total (--)", "chem (--)", "rcar (--)", "rcar (u1)"],
+     "rcar: 1/2 or 50%"),
+    ("rcar (--)",
+     ["root (--)", "total (--)", "chem (--)", "rcar (--)", "rcar (u1)"],
+     "rcar: 1/2 or 50%"),])
+def test_get_top_level_shares(medium_tree, nid_top, path_list, expected):
+    t = medium_tree
+    assert t.get_top_level_shares(nid_top, path_list) == expected
+
+
 def test_fairshare_rank(medium_tree):
     t = medium_tree
     assert t.fairshare_rank(1.0) == ("1 of 10", "100th", "top")
@@ -390,9 +408,9 @@ def test_get_descendants_table(account_tree):
     # users at all levels under a specific account
     expected = ("    User   Account     Usage      LevelFS   Fairshare\n"
                 "    ─────────────────────────────────────────────────\n"
-                "1     u1       tom   333 (90%)   infinity      0.5550\n"
-                "2     u1       pli    33  (9%)          6      0.5000\n"
-                "3     u2       pli     3  (1%)          6      0.5500\n")
+                "1     u1       tom   333 (90%)   infinity       0.555\n"
+                "2     u1       pli    33  (9%)          6       0.500\n"
+                "3     u2       pli     3  (1%)          6       0.550\n")
     assert t.get_descendants_table(node_id="pli (--)", args_account="pli") == expected
 
 
