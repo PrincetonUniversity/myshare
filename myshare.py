@@ -126,6 +126,28 @@ if __name__ == "__main__":
         print(f"Top-level shares: {top_level_shares}")
         print("")
 
+        accnt = node_id_top_level.split()[0]
+        accnt, ratio, _, pct = top_level_shares.split()
+        accnt = accnt.replace(":", "")
+        shares_accnt, shares_total = ratio.split("/")
+        pct_fmt = round(100 * int(shares_accnt) / int(shares_total), 2)
+        one_level_down_idx = path.index(node_id_top_level) + 1
+        one_level_down_nid = path[one_level_down_idx]
+        levelfs = float(mytree.tree[one_level_down_nid].data.level_fs)
+        inverse_levelfs = round(1/levelfs, 1) if levelfs > 0 else 0
+        somewhat = " somewhat " if 0.4 <= float(fs) < 0.5 else " "
+        msg = (f'The "{accnt}" account holds only {shares_accnt} of the {shares_total} shares '
+               f'on Della. This corresponds to an expected usage of {pct_fmt}% '
+               f'when the cluster is fully utilized. However, "{accnt}" is currently '
+               f'over-served by a factor of {inverse_levelfs}, resulting in your{somewhat}low fairshare value '
+               f'of {round(float(fs), 3)}. Your jobs must wait in the queue '
+               'until they accumulate enough priority to run. Please see the attached '
+               'file for additional details and '
+               f'a breakdown of "{accnt}" usage by individual user and research group.'
+               '\n\nSee the following webpage to understand how fairshare relates to job priority:'
+               '\nhttps://researchcomputing.princeton.edu/support/knowledge-base/job-priority\n')
+        print(msg)
+
         if not args.verbose:
             print("The table below shows the accounts sorted by LevelFS which is normalized")
             print("Shares divided by normalized Usage:\n")

@@ -149,6 +149,21 @@ class ShareTree:
                     path.reverse()
                     self.root_to_user_paths.append(path)
                     self.num_accounts += 1
+            elif len(items) == 7 and "parent" in line:
+                # user level
+                # cses  bill  parent  0.000000  0  0.000000  0.022052
+                items[2] = "1"
+                items.append("inf")
+                identifier = f"{account} ({items[1]})"
+                self.tree.create_node(tag=account,
+                                      identifier=identifier,
+                                      parent=current_parent,
+                                      data=TreeNode(*items))
+                if netid == user:
+                    path = list(self.tree.rsearch(identifier))
+                    path.reverse()
+                    self.root_to_user_paths.append(path)
+                    self.num_accounts += 1
             elif len(items) == 5 and "parent" in line:
                 # non-user association with RawShares equals "parent"
                 items.insert(1, "--")
