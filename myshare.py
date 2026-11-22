@@ -27,13 +27,24 @@ except ModuleNotFoundError:
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Explain to users what resources they should expect")
-    parser.add_argument("-u", "--user", type=str, default=os.environ.get("USER"), help="Username of the user")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Show more details")
-    parser.add_argument("-A", "--account", type=str, default=None, help="Show usage of all users under an account")
-    parser.add_argument("-g", "--group-by-account", action="store_true", help="Group by account (modifies the -A option)")
-    parser.add_argument("-s", "--shares", action="store_true", help="Show accounts sorted by shares")
-    parser.add_argument("-d", "--debug", action="store_true", help="Print debug info")
+    d = "myshare explains Slurm queue times and shows usage by user and group"
+    parser = argparse.ArgumentParser(description=d)
+    parser.add_argument("-u", "--user", type=str, default=os.environ.get("USER"),
+                        help="username of the user (default is the current user)")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="show more details")
+    parser.add_argument("-A", "--account", type=str, default=None,
+                        help="show usage of all users under an account")
+    parser.add_argument("-g", "--group-by-account", action="store_true",
+                        help="group by account (modifies the -A option)")
+    parser.add_argument("-s", "--shares", action="store_true",
+                        help="show accounts sorted by shares")
+    parser.add_argument("-d", "--debug", action="store_true",
+                        help="print debug info")
+    parser.add_argument("-k", "--skip-accounts", type=str, default=None,
+                        help="comma-separated list of high-level accounts to skip")
+    parser.add_argument("-z", "--show-zero-usage", action="store_true",
+                        help="show users with zero usage")
     args = parser.parse_args()
     if args.group_by_account and args.account is None:
         print("The -g flag can only be used when -A <account> is specified.")
@@ -41,12 +52,26 @@ if __name__ == "__main__":
 
     term = Terminal()
     mytree = ShareTree()
-    mytree.get_raw_data()
+
+    use_cache_file = True
+    if use_cache_file:
+        """For offline development, run the command below:
+           sshare -a -l -n -o Account,User,RawShares,NormShares,RawUsage,EffectvUsage,FairShare,LevelFS > sshare.txt
+        """
+        with open("sshare_stellarai.txt", "r", encoding="utf8") as fp:
+            text = fp.read()
+            mytree.get_raw_data(text)
+    else:
+        mytree.get_raw_data()
+
     try:
         mytree.parse(args.user)
     except ShareTreeError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
+
+    if c.REMOVE_ROOT_USER:
+        mytree.remove_root_user(args.verbose)
 
     if args.debug:
         print(mytree.analyze())
@@ -60,6 +85,40 @@ if __name__ == "__main__":
     print("─" * c.WIDTH)
 
 
+    #################
+    ## S H A R E S ##
+    #################
+    num_accounts_shown = 0
+    if args.shares:
+        for path in mytree.root_to_user_paths:
+            if args.verbose:
+                print("INFO: The -v flag has no effect on -s or --shares.")
+            node_id_top_level = mytree.get_top_level_node_id(path,
+                                                             c.SKIP_ROOT_ACCOUNTS,
+                                                             args.skip_accounts)
+            mytree.draw_subtree(node_id_top_level, path, args.user, details=False)
+            down = "\u2193"
+            print(f"The table below ({down}) shows the accounts sorted by Shares:\n")
+            accounts_to_color = tuple([p.split()[0] for p in path[:-1] if p != "root (--)"])
+            fields_shares = ("Account", "Shares", "ActiveUsers")
+            table = mytree.get_descendants_table(node_id=node_id_top_level,
+                                                 decimals=2,
+                                                 sort_by="RawShares",
+                                                 accounts_to_color=accounts_to_color,
+                                                 output_width=c.WIDTH,
+                                                 fields=fields_shares)
+            print(table)
+
+            num_accounts_shown += 1
+            if mytree.num_accounts > 1 and num_accounts_shown < mytree.num_accounts:
+                print("\n\n")
+                print("─" * c.WIDTH)
+                next_acc = "  N E X T    A C C O U N T  ".center(c.WIDTH, "─")
+                print(next_acc)
+                print("─" * c.WIDTH)
+        sys.exit(0)
+
+
     ###################
     ## A C C O U N T ##
     ###################
@@ -68,15 +127,25 @@ if __name__ == "__main__":
             print("INFO: The -v flag has no effect on -A <account>.")
         node_id = f"{args.account} (--)"
         if node_id in mytree.tree:
-            #mytree.draw_subtree(node_id, ["root (--)"], args.account)
+            """Since accounts have unique names, forming accounts_to_color in
+               this way is fine. The username is excluded since that is
+               stored in user_to_color."""
+            accounts_to_color = tuple(set([acc.split()[0]
+                                           for path in mytree.root_to_user_paths
+                                           for acc in path[:-1]]))
             table = mytree.get_descendants_table(node_id=node_id,
                                                  decimals=1,
                                                  sort_by="Usage",
                                                  user_to_color=args.user,
+                                                 accounts_to_color=accounts_to_color,
                                                  group_by_account=args.group_by_account,
                                                  args_account=args.account,
+                                                 show_zero_usage=args.show_zero_usage,
                                                  output_width=c.WIDTH)
-            mytree.print_account_table(table, args.account, args.group_by_account)
+            mytree.print_account_table(table,
+                                       args.account,
+                                       args.group_by_account,
+                                       show_zero_usage=args.show_zero_usage)
         else:
             valid_accounts = mytree.get_valid_accounts(c.SKIP_ROOT_ACCOUNTS)
             msg = mytree.invalid_account_message(args.account,
@@ -87,36 +156,16 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
 
-
-    #################
-    ## S H A R E S ##
-    #################
-    if args.shares:
-        for path in mytree.root_to_user_paths:
-            if args.verbose:
-                print("INFO: The -v flag has no effect on -s or --shares.")
-            down = "\u2193"
-            print(f"\nThe table below ({down}) shows the accounts sorted by Shares:\n")
-            node_id_top_level = mytree.get_top_level_node_id(path, c.SKIP_ROOT_ACCOUNTS)
-            accounts_to_color = tuple([p.split()[0] for p in path[:-1]])
-            fields_shares = ("Account", "Shares", "ActiveUsers")
-            # TODO does not work for PLI since mix of accounts and users
-            print(mytree.get_descendants_table(node_id=node_id_top_level,
-                                               decimals=1,
-                                               sort_by="RawShares",
-                                               accounts_to_color=accounts_to_color,
-                                               output_width=c.WIDTH,
-                                               fields=fields_shares))
-        sys.exit(0)
-
-
+ 
     #############
     ## U S E R ##
     #############
     num_accounts_shown = 0
     for path in mytree.root_to_user_paths:
         node_id = path[-1]
-        node_id_top_level = mytree.get_top_level_node_id(path, c.SKIP_ROOT_ACCOUNTS)
+        node_id_top_level = mytree.get_top_level_node_id(path,
+                                                         c.SKIP_ROOT_ACCOUNTS,
+                                                         args.skip_accounts)
         mytree.draw_subtree(node_id_top_level, path, args.user)
         fs = mytree.tree[node_id].data.fair_share
         print(mytree.format_fairshare_line(fs))
@@ -158,6 +207,7 @@ if __name__ == "__main__":
                                                sort_by="LevelFS",
                                                user_to_color=args.user,
                                                accounts_to_color=accounts_to_color,
+                                               show_zero_usage=args.show_zero_usage,
                                                output_width=c.WIDTH,
                                                fields=fields_acc))
         if args.verbose:
@@ -178,6 +228,7 @@ if __name__ == "__main__":
                                                    tabbing=i,
                                                    vertical_line=True,
                                                    accounts_to_color=accounts_to_color,
+                                                   show_zero_usage=args.show_zero_usage,
                                                    output_width=c.WIDTH,
                                                    user_to_color=args.user), end="")
                 if i < len(path) - 2:

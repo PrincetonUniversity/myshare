@@ -438,4 +438,4 @@ def test_get_descendants_table(account_tree):
      "root (--)")])
 def test_get_top_level_node_id(small_tree, path_list, skip_root_accounts, expected):
     t = small_tree
-    assert t.get_top_level_node_id(path_list, skip_root_accounts) == expected
+    assert t.get_top_level_node_id(path_list, skip_root_accounts, skip=None) == expected

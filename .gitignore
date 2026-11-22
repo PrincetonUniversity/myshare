@@ -1,3 +1,11 @@
+# Added by J. Halverson
+.DS_Store
+sshare_adroit.txt
+sshare_della.txt
+sshare_stellar.txt
+sshare_stellarai.txt
+sshare_tiger.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -13,13 +13,19 @@ SHARES_PREC = 0
 # this is needed for computing department shares against a total
 # if this path is found then ignore root and start at end of path
 # is a pattern needed to differentiate different clusters?
-SKIP_ROOT_ACCOUNTS = ("total", "pli", "ailab")
+# Use --skip=total,pli,ailab to override these config.py settings
+# Use --skip="" to not skip any accounts
+#SKIP_ROOT_ACCOUNTS = ("total", "pli", "ailab-c", "ailab-p")
+#SKIP_ROOT_ACCOUNTS = ("total",)
+SKIP_ROOT_ACCOUNTS = tuple()
 
 # if set then will be displayed at bottom of verbose output
 MORE_INFO_URL = "https://researchcomputing.princeton.edu/support/knowledge-base/job-priority"
 
 # specify the factors instead of using auto-detect (options are ...)
 FACTORS = ("SITE", "AGE", "FAIRSHARE", "JOBSIZE", "QOS")
+
+REMOVE_ROOT_USER = True
 
 # how many master tables to output if multiple accounts were found in verbose mode
 REPEAT_ALL_TABLES = False
