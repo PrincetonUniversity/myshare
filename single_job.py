@@ -1,6 +1,5 @@
 import subprocess
-from typing import List
-from typing import Dict
+
 import sprio_weights
 
 
@@ -9,8 +8,8 @@ class SingleJobBreakdown:
     def __init__(self, user: str, fairshare: float) -> None:
         self.user = user
         self.fairshare = fairshare
-        self.lines: List[str] = []
-        self.job_dict: Dict[str, str] = dict()
+        self.lines: list[str] = []
+        self.job_dict: dict[str, str] = {}
 
 
     def get_job_data(self) -> None:
@@ -58,6 +57,6 @@ class SingleJobBreakdown:
         print("   priority = w_a * AGE + w_q * QOS / QOS_max + w_j * JOBSIZE + w_f * FAIRSHARE")
         print(f"   priority = {w_a} * AGE + {w_q} * QOS / QOS_max + {w_j} * JOBSIZE + {w_f} * {self.fairshare}")
         print(f"   priority = {w_a} * AGE + {w_q} * QOS / QOS_max + {w_j} * JOBSIZE + {round(w_f * float(self.fairshare))}")
-        print("")
+        print()
         # sprio -S 'Y'
         print("Jobs typically need a priority of 13000 to begin running.")

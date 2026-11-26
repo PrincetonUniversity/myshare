@@ -17,7 +17,7 @@ SHARES_PREC = 0
 # Use --skip="" to not skip any accounts
 #SKIP_ROOT_ACCOUNTS = ("total", "pli", "ailab-c", "ailab-p")
 #SKIP_ROOT_ACCOUNTS = ("total",)
-SKIP_ROOT_ACCOUNTS = tuple()
+SKIP_ROOT_ACCOUNTS = ()
 
 # if set then will be displayed at bottom of verbose output
 MORE_INFO_URL = "https://researchcomputing.princeton.edu/support/knowledge-base/job-priority"
@@ -25,10 +25,11 @@ MORE_INFO_URL = "https://researchcomputing.princeton.edu/support/knowledge-base/
 # specify the factors instead of using auto-detect (options are ...)
 FACTORS = ("SITE", "AGE", "FAIRSHARE", "JOBSIZE", "QOS")
 
-REMOVE_ROOT_USER = True
+# remove root user from tree if it has zero usage
+REMOVE_ROOT_USER = False
 
-# how many master tables to output if multiple accounts were found in verbose mode
-REPEAT_ALL_TABLES = False
+# list of cluster names to ignore
+IGNORE_CLUSTERS = ()
 
 SHOW_ZERO_USAGE = False
 

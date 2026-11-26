@@ -25,3 +25,11 @@ URL where users can learn more about job priority and scheduling jobs:
 ````
 MORE_INFO_URL = "https://researchcomputing.princeton.edu/support/knowledge-base/job-priority"
 ```
+
+(Optional) Tuple of cluster names where the command should not run:
+
+```
+IGNORE_CLUSTERS = ("frontier", "elcapitan")
+```
+
+Run with `--verbose` to see what cluster name was found.

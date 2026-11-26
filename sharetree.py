@@ -11,15 +11,13 @@
 
 import subprocess
 import textwrap
-from treelib import Tree
+
 from treelib import Node as TreeLibNode
+from treelib import Tree
 from treelib.exceptions import DuplicatedNodeIdError
-from typing import Optional
-from typing import Union
-from typing import List
-from typing import Tuple
-from typing import Dict
+
 import config as c
+
 try:
     from blessed import Terminal
     blessed_is_available = True
@@ -69,26 +67,19 @@ class ShareTree:
     """Leading spaces are used to determine the level of each account or user.
 
        Slurm account names are unique across the accounting hierarchy. This
-       is useful for working with subtrees.
-
-       Other projects
-       https://github.com/molgenis/cluster-utils
-       https://altlinux.pkgs.org/p11/autoimports-noarch/perl-Slurm-Sshare-1.2.2-alt1.noarch.rpm.html#google_vignette
-       https://hpc-docs.uni.lu/slurm/fairsharing/
-
-       Box-drawing characters are used in the output."""
+       is useful for working with subtrees."""
 
     def __init__(self) -> None:
         """Create a tree instance and initialize num_accounts which tracks the
            number of accounts for the user."""
-        self.lines: List[str] = []
+        self.lines: list[str] = []
         self.tree = Tree()
-        self.root_to_user_paths: List[List[str]] = []
+        self.root_to_user_paths: list[list[str]] = []
         self.num_accounts = 0
         self.rawshares_parent = 0
 
 
-    def get_raw_data(self, text: Optional[str] = None) -> None:
+    def get_raw_data(self, text: str | None = None) -> None:
         """Get the data from either sacct or a string to build the tree. The
            string makes it possible to test the code."""
         if text:
@@ -106,7 +97,7 @@ class ShareTree:
             self.lines = output.stdout.splitlines()
 
 
-    def parse(self, netid: str) -> None:
+    def parse(self, netid: str, verbose: bool = False) -> None:
         """Build the tree by parsing the sshare output line by line."""
         parent_at_level = {-1: "root (--)"}
         current_parent = "root (--)"
@@ -133,7 +124,7 @@ class ShareTree:
             identifier = f"{account} ({user})"
 
             parent_level = max([lvl
-                                for lvl in parent_at_level.keys()
+                                for lvl in parent_at_level
                                 if lvl < level],
                                default=-1)
             current_parent = parent_at_level[parent_level]
@@ -150,10 +141,20 @@ class ShareTree:
                     self.root_to_user_paths.append(path)
                     self.num_accounts += 1
             elif len(items) == 7 and "parent" in line:
-                # user level
-                # cses  bill  parent  0.000000  0  0.000000  0.022052
-                items[2] = "1"
-                items.append("inf")
+                # This branch is for a user level line where RawShares is
+                # listed as parent and LevelFS is absent. Below is an example:
+                #
+                # Account User RawShares NormShares RawUsage EffectvUsage FairShare LevelFS
+                # cses    bill parent    0.000000   0        0.000000     0.022052
+                #
+                # The sshare source code indicates that LevelFS is infinity in
+                # this case. The RawShares is undefined. For simplicity, it is set
+                # to 1 with a warning statement.
+                if verbose:
+                    j = " ".join(items)
+                    print(f"Special user: using RawShares=1, LevelFS=inf ({j})")
+                items[2] = "1"       # raw_shares
+                items.append("inf")  # level_fs
                 identifier = f"{account} ({items[1]})"
                 self.tree.create_node(tag=account,
                                       identifier=identifier,
@@ -199,18 +200,33 @@ class ShareTree:
                 raise ValueError(msg)
 
 
-    def analyze(self) -> str:
+    def print_tree(self) -> str:
+        """Return the tree as a string by creating a new tree with the desired
+           formatting."""
         if len(self.tree) == 0:
             return "INFO: The tree is empty."
-        self.tree.show(idhidden=False)
-        s = "DEBUG\n=====\n"
+        new_tree = Tree()
+        for node in self.tree.all_nodes_itr():
+            parent_node = self.tree.parent(node.identifier)
+            if node.data.user == "--":
+                tag = node.tag
+            else:
+                tag = node.data.user
+            new_tree.create_node(tag, node.identifier, parent=parent_node)
+        return new_tree.show(stdout=False)
+
+
+    def analyze(self) -> str:
+        """Return properties of the tree."""
+        if len(self.tree) == 0:
+            return "INFO: The tree is empty."
+        s = "Tree Properties\n===============\n"
         s += f"Root node: {self.tree.root}\n"
         s += f"Level 1 nodes: {[item.identifier for item in self.tree.children('root (--)')]}\n"
         s += f"Tree size: {self.tree.size()}\n"
         s += f"Leaves count: {len(self.tree.leaves())}\n"
         s += f"Tree depth: {self.tree.depth()}\n"
         s += f"Is total (--) in tree? {'total (--)' in self.tree}\n"
-        s += f'Number of accounts with RawShares equals "parent": {self.rawshares_parent}\n'
         s += f'Root to user paths: {self.root_to_user_paths}\n\n'
         return s
 
@@ -221,15 +237,15 @@ class ShareTree:
            user is not. If the root user is not used then for simplicity
            it makes sense to remove it."""
         root_user_id = "root (root)"
-        if root_user_id in self.tree:
-            if self.tree[root_user_id].data.raw_usage == "0":
-                _ = self.tree.remove_node(root_user_id)
-                if verbose:
-                    print("INFO: root user removed")
+        if root_user_id in self.tree and \
+           self.tree[root_user_id].data.raw_usage == "0":
+            _ = self.tree.remove_node(root_user_id)
+            if verbose:
+                print("INFO: root user removed")
 
 
     @staticmethod
-    def add_proportions(values: List[str], decimals: int = 0) -> List[str]:
+    def add_proportions(values: list[str], decimals: int = 0) -> list[str]:
         """Add the proportion of each value in parentheses."""
         if values == []:
             return []
@@ -253,7 +269,7 @@ class ShareTree:
         return str(num_active_users)
 
 
-    def min_max_fairshare(self, descendant: TreeLibNode) -> Tuple[str, str]:
+    def min_max_fairshare(self, descendant: TreeLibNode) -> tuple[str, str]:
         """Return tuple of min and max fairshare values of the leaves of the
            subtree of the specified node (descendant)."""
         if descendant.is_leaf():
@@ -270,7 +286,7 @@ class ShareTree:
 
 
     @staticmethod
-    def column_width(name: str, values: List[str]) -> Tuple[str, int]:
+    def column_width(name: str, values: list[str]) -> tuple[str, int]:
         """Return a tuple of the column width and padded column name."""
         name_width = len(name)
         values_width = max(map(len, values))
@@ -282,11 +298,11 @@ class ShareTree:
 
 
     @staticmethod
-    def create_table(columns: Dict[str, List[str]],
+    def create_table(columns: dict[str, list[str]],
                      show_zero_usage: bool = False,
                      vertical_line: bool = False,
                      indent: str = "",
-                     accounts_to_color: Tuple[str, ...] = (),
+                     accounts_to_color: tuple[str, ...] = (),
                      user_to_color: str = "",
                      caption: str = "") -> str:
         """Note that get width of index but that could change since number of
@@ -355,13 +371,14 @@ class ShareTree:
                               decimals: int = 0,
                               tabbing: int = 0,
                               vertical_line = False,
-                              args_account: Optional[str] = None,
-                              accounts_to_color: Tuple[str, ...] = (),
+                              args_account: str | None = None,
+                              accounts_to_color: tuple[str, ...] = (),
                               user_to_color: str = "",
                               group_by_account: bool = False,
                               show_zero_usage: bool = False,
+                              user_as_account: bool = False,
                               output_width: int = 80,
-                              fields: Tuple[str, ...] = ()) -> str:
+                              fields: tuple[str, ...] = ()) -> str:
         """Return a data table of the children or all descendants (if -A option
            is used) of the specified parent node.
 
@@ -373,17 +390,22 @@ class ShareTree:
         rows = []
         if args_account is not None:
             if group_by_account:
-                if not all([ch.is_leaf() for ch in self.tree.children(node_id)]):
+                if not all(ch.is_leaf() for ch in self.tree.children(node_id)):
                     descendants = self.tree.children(node_id)
                 else:
-                    return f'There are no accounts under "{args_account}" so -g flag is invalid.'
+                    return f'There are no descendants under "{args_account}" so -g flag is invalid.'
             else:
                 descendants = [leaf
                                for leaf in self.tree.leaves(node_id)
                                if "(--)" not in leaf.identifier]
+                #descendants = [leaf
+                #               for leaf in self.tree.leaves(node_id)]
         else:
             descendants = self.tree.children(node_id)
 
+        if not descendants:
+            return f'No table since "{node_id.split()[0]}" has no descendants.'
+        
         for desc in descendants:
             num_active_users = self.number_of_active_users(desc.identifier)
             min_fs, max_fs = self.min_max_fairshare(desc)
@@ -427,8 +449,7 @@ class ShareTree:
         shares = self.add_proportions(shares, decimals=decimals)
         usage_props = self.add_proportions(usage, decimals=decimals)
 
-        all_users = True if all([ch.is_leaf() and "(--)" not in ch.identifier
-                                 for ch in self.tree.children(node_id)]) else False
+        all_users = bool(all(ch.is_leaf() and "(--)" not in ch.identifier for ch in self.tree.children(node_id)))
         mixed = False
         num_leaves = sum([ch.is_leaf() for ch in self.tree.children(node_id)])
         if num_leaves > 0 and num_leaves < len(self.tree.children(node_id)):
@@ -436,7 +457,8 @@ class ShareTree:
 
         tb = " " * 5 * tabbing
         if fields == ("Account", "Shares", "ActiveUsers") and sort_by == "RawShares":
-            #account = ["--" if usr != "--" else acc for acc, usr in zip(account, user)]
+            if user_as_account:
+                account = [f"{usr} (user)" if usr != "--" else acc for acc, usr in zip(account, user)]
             columns = {"Account": account,
                        "Shares": shares,
                        "ActiveUsers": users}
@@ -446,7 +468,7 @@ class ShareTree:
             return table
         elif args_account is not None and not group_by_account:
             # myshare -A <account>
-            lfs_fmt = self.format_levelfs_list(lfs)
+            lfs_fmt = self.format_levelfs_list(lfs, padding=False)
             columns = {"User": user,
                        "Account": account,
                        "Usage": usage_props,
@@ -491,7 +513,7 @@ class ShareTree:
                                       caption=caption)
             return table
         else:
-            padding = False if args_account is not None and group_by_account else True
+            padding = not (args_account is not None and group_by_account)
             lfs_fmt = self.format_levelfs_list(lfs, padding=padding)
             columns = {"Account": account,
                        "Shares": shares,
@@ -535,7 +557,7 @@ class ShareTree:
             return f"{n}th"
 
 
-    def fairshare_rank(self, fs: str) -> Tuple[str, str, str]:
+    def fairshare_rank(self, fs: str) -> tuple[str, str, str]:
         """Estimate the rank of the user. One could determine it exactly but
            not so important. Note that the total number of users is used
            instead of the active number of users (where usage > 0)."""
@@ -553,7 +575,7 @@ class ShareTree:
 
 
     @staticmethod
-    def share_as_percentage(shares: int, total: int) -> Union[int, float]:
+    def share_as_percentage(shares: int, total: int) -> int | float:
         """Return a formatted version of the percentage of raw shares of the
            department."""
         pct = 100 * shares / total
@@ -563,8 +585,8 @@ class ShareTree:
 
 
     def get_top_level_node_id(self,
-                              path: List[str],
-                              sr_accounts: Tuple[str, ...],
+                              path: list[str],
+                              sr_accounts: tuple[str, ...],
                               skip: str) -> str:
         """Given a path and a list of accounts that should skip root, return
            the node_id of the appropriate top-level account. The skip
@@ -597,7 +619,7 @@ class ShareTree:
 
     def get_top_level_shares(self,
                              node_id_top_level: str,
-                             path: List[str]) -> str:
+                             path: list[str]) -> str:
         """Return information about the shares of the top-level account. The
            node_id_top_level is guaranteed to be in path."""
         total = self.get_total_shares(node_id_top_level)
@@ -636,9 +658,7 @@ class ShareTree:
             val, pad = f"{lfs:.2e}", "    "
         elif lfs >= 2.5:
             val, pad = f"{lfs:.0f}", "    "
-        elif lfs >= 0.95:
-            val, pad = f"{lfs:.1f}", "  "
-        elif lfs >= 0.095:
+        elif lfs >= 0.95 or lfs >= 0.095:
             val, pad = f"{lfs:.1f}", "  "
         elif lfs >= 0.0095:
             val, pad = f"{lfs:.2f}", " "
@@ -652,15 +672,15 @@ class ShareTree:
 
 
     @staticmethod
-    def format_levelfs_list(lfs_list: List[float],
-                            padding: bool = False) -> List[str]:
+    def format_levelfs_list(lfs_list: list[float],
+                            padding: bool = False) -> list[str]:
         """Return a list of formatted LevelFS values."""
         return [ShareTree.format_levelfs(x, padding) for x in lfs_list]
 
 
     def draw_subtree(self,
                      node_id_top_level: str,
-                     path: List[str],
+                     path: list[str],
                      netid: str,
                      details: bool=True) -> None:
         """Draw the subtree from root to the last node_id in path."""
@@ -689,7 +709,7 @@ class ShareTree:
 
 
     @staticmethod
-    def colorize(txt: Union[str, int, float], style: str="normal", color: str="black") -> str:
+    def colorize(txt: str | float, style: str="normal", color: str="black") -> str:
         term = Terminal()
         if not blessed_is_available:
             return str(txt)
@@ -721,7 +741,7 @@ class ShareTree:
 
 
     @staticmethod
-    def format_fairshare(fs: Union[float, str]) -> str:
+    def format_fairshare(fs: float | str) -> str:
         """Return fairshare value with appropriate precision."""
         if fs == "--":
             return fs
@@ -760,7 +780,7 @@ class ShareTree:
         down = "\u2193"
         if "No table since" not in table and num_table_lines > 2:
             if group_by_account:
-                print(f'\nAggregate usage of each account under Slurm account "{account}":\n')
+                print(f'\nThe table below ({down}) shows the aggregate usage of each account under the Slurm account "{account}":\n')
             else:
                 print(f'\nAll {ua} under Slurm account "{account}" are shown below ({down}) sorted by Usage:\n')
             print(table)
@@ -775,10 +795,10 @@ class ShareTree:
 
 
     def get_valid_accounts(self,
-                           skip_root_accounts: Tuple[str, ...] = ()) -> List[str]:
+                           skip_root_accounts: tuple[str, ...] = ()) -> list[str]:
         """Return a list of valid high-level accounts if the user supplies an
            account through the -A option that is not found in the tree."""
-        accounts: List[str] = []
+        accounts: list[str] = []
         in_tree = [f"{acc} (--)" in self.tree for acc in skip_root_accounts]
         if skip_root_accounts and any(in_tree):
             for sr_account in skip_root_accounts:
@@ -796,7 +816,7 @@ class ShareTree:
 
     def invalid_account_message(self,
                                 invalid_account: str,
-                                valid_accounts: List[str],
+                                valid_accounts: list[str],
                                 group_by_account: bool = False,
                                 output_width: int = 80) -> str:
         """Return a comma-separated list of valid accounts to be displayed if

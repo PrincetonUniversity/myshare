@@ -2,6 +2,7 @@
 
 import subprocess
 
+
 class SprioWeights:
     """
     A class to capture and parse Slurm sprio weights.
