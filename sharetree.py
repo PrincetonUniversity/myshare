@@ -8,7 +8,7 @@
 
 """
 
-
+import re
 import subprocess
 import textwrap
 
@@ -375,6 +375,7 @@ class ShareTree:
                               accounts_to_color: tuple[str, ...] = (),
                               user_to_color: str = "",
                               group_by_account: bool = False,
+                              show_all_rows: bool = True,
                               show_zero_usage: bool = False,
                               user_as_account: bool = False,
                               output_width: int = 80,
@@ -393,7 +394,9 @@ class ShareTree:
                 if not all(ch.is_leaf() for ch in self.tree.children(node_id)):
                     descendants = self.tree.children(node_id)
                 else:
-                    return f'There are no descendants under "{args_account}" so -g flag is invalid.'
+                    msg = (f"There are no accounts under {args_account!r} to"
+                           " aggregate so the -g flag or\n--group-by-account is invalid.")
+                    return msg
             else:
                 descendants = [leaf
                                for leaf in self.tree.leaves(node_id)
@@ -425,7 +428,7 @@ class ShareTree:
             rows.sort(key=lambda x: x[2], reverse=True)
         else:
             raise ValueError(f"Invalid sort_by value: {sort_by!r}.")
-
+ 
         account = []
         user = []
         shares = []
@@ -449,14 +452,19 @@ class ShareTree:
         shares = self.add_proportions(shares, decimals=decimals)
         usage_props = self.add_proportions(usage, decimals=decimals)
 
-        all_users = bool(all(ch.is_leaf() and "(--)" not in ch.identifier for ch in self.tree.children(node_id)))
+        all_users = bool(all(ch.is_leaf() and "(--)" not in ch.identifier
+                             for ch in self.tree.children(node_id)))
+        all_accounts = bool(all("(--)" in ch.identifier
+                                for ch in self.tree.children(node_id)))
         mixed = False
         num_leaves = sum([ch.is_leaf() for ch in self.tree.children(node_id)])
-        if num_leaves > 0 and num_leaves < len(self.tree.children(node_id)):
+        if num_leaves > 0 and num_leaves < len(self.tree.children(node_id)) and \
+           not all_users and not all_accounts:
             mixed = True
 
         tb = " " * 5 * tabbing
         if fields == ("Account", "Shares", "ActiveUsers") and sort_by == "RawShares":
+            # shares
             if user_as_account:
                 account = [f"{usr} (user)" if usr != "--" else acc for acc, usr in zip(account, user)]
             columns = {"Account": account,
@@ -495,15 +503,20 @@ class ShareTree:
                                       caption=caption)
             return table
         elif mixed:
-            account = ["--" if usr != "--" else acc for acc, usr in zip(account, user)]
+            #account = ["--" if usr != "--" else acc for acc, usr in zip(account, user)]
             lfs_fmt = self.format_levelfs_list(lfs, padding=True)
             columns = {"Account": account,
                        "User": user,
                        "Usage": usage_props,
                        "LevelFS": lfs_fmt,
-                       "Fairshare": fair}
-            caption_raw = ("This level of the sshare tree contains accounts and users.")
-            caption = textwrap.TextWrapper(width=output_width).fill(caption_raw)
+                       "Fairshare": minmax,
+                       "ActiveUsers": users}
+            
+            if args_account:
+                caption = ""
+            else:
+                caption_raw = ("This level of the sshare tree contains accounts and users.")
+                caption = textwrap.TextWrapper(width=output_width).fill(caption_raw)
             table = self.create_table(columns,
                                       show_zero_usage=show_zero_usage,
                                       vertical_line=vertical_line,
@@ -769,10 +782,29 @@ class ShareTree:
         return wrapper.fill(msg)
 
 
-    def print_account_table(self,
-                            table: str,
+    @staticmethod
+    def get_truncated_table(table: str) -> str:
+        """Return a string containing the truncated table. The purpose of this
+           method is to ignore items in long tables which generate a lot of
+           output and require the user to scroll. Alternatives would be to use
+           a pager or output the table in reverse order so that the users with
+           the highest usage are at the bottom."""
+        rows = table.splitlines()
+        trun_row = rows[c.NUM_ROWS_TABLE_TRUNCATION - 1]
+        indices = [column.end() - 1 for column in re.finditer(r"\S+", trun_row)]
+        chars = list(" " * len(trun_row))
+        for i in indices:
+            chars[i] = "\u22EE"
+        return f"{'\n'.join(rows[:c.NUM_ROWS_TABLE_TRUNCATION])}\n" + \
+               f"{''.join(chars)}\n" + \
+               f"{rows[-1]}\n"
+
+
+    @staticmethod
+    def print_account_table(table: str,
                             account: str,
                             group_by_account: bool = False,
+                            show_all_rows: bool = True,
                             show_zero_usage: bool = False) -> None:
         """Print the table for the specified account."""
         num_table_lines = len(table.splitlines())
@@ -780,17 +812,26 @@ class ShareTree:
         down = "\u2193"
         if "No table since" not in table and num_table_lines > 2:
             if group_by_account:
-                print(f'\nThe table below ({down}) shows the aggregate usage of each account under the Slurm account "{account}":\n')
+                msg = (f'\nThe table below ({down}) shows the aggregate usage of '
+                       f'each account under the Slurm\naccount "{account}":\n')
+                print(msg)
             else:
-                print(f'\nAll {ua} under Slurm account "{account}" are shown below ({down}) sorted by Usage:\n')
+                msg = (f'\nAll {ua} under Slurm account "{account}" are shown '
+                       f'below ({down}) sorted by Usage:\n')
+                print(msg)
+            if not show_all_rows:
+                table_length = len(table.splitlines())
+                if table_length > c.NUM_ROWS_TABLE_TRUNCATION + 2:
+                    table = ShareTree.get_truncated_table(table)
             print(table)
             if not group_by_account and not show_zero_usage:
                 print('Note: Users with zero "Usage" are not shown.')
         elif num_table_lines == 2 and not show_zero_usage:
-            print(f'\nAll {ua} under Slurm account "{account}" are shown below ({down}) sorted by Usage:\n')
+            print()
             print(table, end="")
             print(f"    No {ua} shown since all users have zero Usage")
         else:
+            print()
             print(table)
 
 

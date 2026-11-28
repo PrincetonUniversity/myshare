@@ -31,6 +31,9 @@ REMOVE_ROOT_USER = False
 # list of cluster names to ignore
 IGNORE_CLUSTERS = ()
 
+# limit long tables to this number of rows
+NUM_ROWS_TABLE_TRUNCATION = 50
+
 SHOW_ZERO_USAGE = False
 
 # show or ignore the weights paragraph

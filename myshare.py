@@ -18,7 +18,7 @@ import textwrap
 import config as c
 from sharetree import ShareTree, ShareTreeError
 from single_job import SingleJobBreakdown
-from utilities import get_cluster_name
+from utilities import get_cluster_name, title_with_bars
 
 try:
     from blessed import Terminal
@@ -41,6 +41,8 @@ if __name__ == "__main__":
                         help="group by account (modifies the -A option)")
     parser.add_argument("-s", "--shares", action="store_true",
                         help="show high-level accounts sorted by shares")
+    parser.add_argument("-a", "--show-all-rows", action="store_true",
+                        help="show all rows of table or disable row truncation")
     parser.add_argument("-z", "--show-zero-usage", action="store_true",
                         help="show users with zero usage")
     parser.add_argument("-k", "--skip-accounts", type=str, default=None,
@@ -58,6 +60,7 @@ if __name__ == "__main__":
     if hasattr(c, "IGNORE_CLUSTERS"):
         if isinstance(c.IGNORE_CLUSTERS, str):
             c.IGNORE_CLUSTERS = tuple(c.IGNORE_CLUSTERS)
+        ignore: str
         for ignore in c.IGNORE_CLUSTERS:
             if ignore in cluster_name:
                 print(f"INFO: This command is not available on the {ignore} cluster.")
@@ -71,7 +74,7 @@ if __name__ == "__main__":
         """For offline development, run the command below:
            sshare -a -l -n -o Account,User,RawShares,NormShares,RawUsage,EffectvUsage,FairShare,LevelFS > sshare.txt
         """
-        with open("sshare_della.txt", "r", encoding="utf8") as fp:
+        with open("sshare_adroit.txt", "r", encoding="utf8") as fp:
             text = fp.read()
             mytree.get_raw_data(text)
     else:
@@ -99,15 +102,12 @@ if __name__ == "__main__":
         if args.account is None:
             sys.exit(1)
 
-    print("─" * c.WIDTH)
-    print("What is My Share of the Cluster?".center(c.WIDTH))
-    print("─" * c.WIDTH)
-
 
     #################
     ## S H A R E S ##
     #################
     if args.shares:
+        print(title_with_bars("  S H A R E S  "))
         for num_accounts_shown, path in enumerate(mytree.root_to_user_paths):
             if args.verbose:
                 print("INFO: The -v flag has no effect on -s or --shares.")
@@ -141,13 +141,17 @@ if __name__ == "__main__":
     ## A C C O U N T ##
     ###################
     if args.account:
+        if args.group_by_account:
+            print(title_with_bars("  U S A G E    B Y    A C C O U N T  "))
+        else:
+            print(title_with_bars("  U S A G E    B Y    U S E R  "))
         if args.verbose:
             print("INFO: The -v flag has no effect on -A <account>.")
         node_id = f"{args.account} (--)"
         if node_id in mytree.tree:
-            """Since accounts have unique names, forming accounts_to_color in
-               this way is fine. The username is excluded since that is
-               stored in user_to_color."""
+            # Since accounts have unique names, forming accounts_to_color in
+            # the way below is fine. The username is excluded since that is
+            # stored in user_to_color. The "root" account is excluded.
             accounts_to_color = tuple({acc.split()[0]
                                        for path in mytree.root_to_user_paths
                                        for acc in path[1:-1]})
@@ -158,11 +162,13 @@ if __name__ == "__main__":
                                                  accounts_to_color=accounts_to_color,
                                                  group_by_account=args.group_by_account,
                                                  args_account=args.account,
+                                                 show_all_rows=args.show_all_rows,
                                                  show_zero_usage=args.show_zero_usage,
                                                  output_width=c.WIDTH)
             mytree.print_account_table(table,
                                        args.account,
                                        args.group_by_account,
+                                       show_all_rows=args.show_all_rows,
                                        show_zero_usage=args.show_zero_usage)
         else:
             valid_accounts = mytree.get_valid_accounts(c.SKIP_ROOT_ACCOUNTS)
@@ -178,6 +184,7 @@ if __name__ == "__main__":
     #############
     ## U S E R ##
     #############
+    print(title_with_bars("  M Y    S H A R E  "))
     for num_accounts_shown, path in enumerate(mytree.root_to_user_paths):
         node_id = path[-1]
         node_id_top_level = mytree.get_top_level_node_id(path,
@@ -224,10 +231,12 @@ if __name__ == "__main__":
                                                sort_by="LevelFS",
                                                user_to_color=args.user,
                                                accounts_to_color=accounts_to_color,
+                                               show_all_rows=args.show_all_rows,
                                                show_zero_usage=args.show_zero_usage,
                                                output_width=c.WIDTH,
                                                fields=fields_acc))
         if args.verbose:
+            sr_account: str
             for sr_account in c.SKIP_ROOT_ACCOUNTS:
                 nid = f"{sr_account} (--)"
                 if nid in path and mytree.tree.root in path:
@@ -245,6 +254,7 @@ if __name__ == "__main__":
                                                    tabbing=i,
                                                    vertical_line=True,
                                                    accounts_to_color=accounts_to_color,
+                                                   show_all_rows=args.show_all_rows,
                                                    show_zero_usage=args.show_zero_usage,
                                                    output_width=c.WIDTH,
                                                    user_to_color=args.user), end="")
@@ -263,6 +273,7 @@ if __name__ == "__main__":
                  "for periods of time. Then the effective shares increases for everyone else.\n")
             print(textwrap.fill(s, width=c.WIDTH))
             print("More important than shares is your LevelFS Rank at level 2\n")
+            """
             j = SingleJobBreakdown(args.user, fs)
             j.get_job_data()
             j.parse()
@@ -270,13 +281,11 @@ if __name__ == "__main__":
                 #print(j.job_dict)
                 #j.explain()
             j.explain()
+            """
 
         if mytree.num_accounts > 1 and num_accounts_shown + 1 < mytree.num_accounts:
             print("\n\n")
-            print("─" * c.WIDTH)
-            next_acc = "  N E X T    A C C O U N T  ".center(c.WIDTH, "─")
-            print(next_acc)
-            print("─" * c.WIDTH)
+            print(title_with_bars("  N E X T    A C C O U N T  "))
 
     if not args.verbose:
         print("─" * c.WIDTH)
